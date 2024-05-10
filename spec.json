@@ -1,0 +1,21 @@
+{
+    "tags": [ // Array of tags that can be used to tag data
+        "Tag1",
+        "Tag2",
+        "TagN"
+    ],
+    "enforce_tags": false, // Wether tags should actually enforced. If false, any tag can be used
+    "data": [ // Array of arrays
+        [
+            "This is an example data", // The actual data
+            [ // An array of tags applied to the data
+                "Tag1",
+                "TagN"
+            ],
+            { // An object of attributes
+                "attr1": "Test",
+                "time": "1715265975.560432"
+            }
+        ]
+    ]
+}
