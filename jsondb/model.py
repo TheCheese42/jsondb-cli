@@ -1,7 +1,7 @@
 import json
 import re
 from pathlib import Path
-from typing import Iterable, Optional, Union, Unpack
+from typing import Iterable, Optional, Union
 
 TAGS = set[str]
 ENFORCE_TAGS = bool
@@ -13,6 +13,8 @@ STRUCTURE = dict[
     str,
     Union[TAGS, DATA, ENFORCE_TAGS, BACKUPS_ENABLED]
 ]
+
+DEFAULT_FORMAT_STRING = '[%id(3)] "%data()" (%tags(", ")) (%attrs(": ","; "))'
 
 
 class Database:
@@ -207,9 +209,7 @@ class Database:
     def format(
         self,
         ids: Iterable[int],
-        fmt_string: str = (
-            '[%id(3)] "%data()" (%tags(", ")) (%attrs(": ","; "))'
-        ),
+        fmt_string: Optional[str] = None,
         use_real_ids: bool = False,
     ) -> str:
         """
@@ -254,15 +254,20 @@ class Database:
         :return: The formatted string
         :rtype: str
         """
+        if fmt_string is None:
+            final_fmt_string = DEFAULT_FORMAT_STRING
+        else:
+            final_fmt_string = fmt_string
+
         RE_ID = r"%id\((\d*)(,\s*\"(.*?)\")?\)"  # Group 1: WIDTH | Group 3: FILL_CHAR  # noqa
         RE_DATA = r"%data\((\d*)(,\s*\"(.*?)\")?\)"  # Group 1: WIDTH | Group 3: FILL_CHAR  # noqa
         RE_TAGS = r"%tags\(\"(.*?)\"\)"  # Group 1: SEP
         RE_ATTRS = r"%attrs\(\"(.*?)\",\s*\"(.*?)\"\)"  # Group 1: SEP1 | Group 2: SEP2  # noqa
 
-        match_id = re.match(RE_ID, fmt_string)
-        match_data = re.match(RE_DATA, fmt_string)
-        match_tags = re.match(RE_TAGS, fmt_string)
-        match_attrs = re.match(RE_ATTRS, fmt_string)
+        match_id = re.match(RE_ID, final_fmt_string)
+        match_data = re.match(RE_DATA, final_fmt_string)
+        match_tags = re.match(RE_TAGS, final_fmt_string)
+        match_attrs = re.match(RE_ATTRS, final_fmt_string)
 
         lines = []
 
@@ -271,7 +276,7 @@ class Database:
                 raise TypeError("ids must be an iterable of integers")
             entry = self.at_index(id)  # May raise IndexError
 
-            line = fmt_string
+            line = final_fmt_string
             if match_id:
                 id_to_embed = id if use_real_ids else i
                 width = match_id.group(1)
