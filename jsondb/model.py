@@ -1,5 +1,6 @@
 import json
 import re
+import sys
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -29,13 +30,24 @@ class Database:
         name: str,
         dir: Optional[Union[str, Path]] = None,
     ) -> None:
+        """
+        Initialize a new database. This ensures that the given path exists.
+
+        :param name: The database name (without extension)
+        :type name: str
+        :param dir: A directory to put the database into. If None, it will
+        target the ~/Documents/jsondb folder, defaults to None
+        :type dir: Optional[Union[str, Path]], optional
+        :raises FileExistsError: The database already exists
+        """
         if dir is None:
             dir = JSONDB_HOME_PATH
+        dir = Path(dir)
 
-        self.path = Path(dir) / name
+        self.path = dir / name
         if self.path.exists():
             raise FileExistsError(f"The file {self.path} already exists.")
-        self.path.mkdir(exist_ok=True)
+        dir.mkdir(exist_ok=True)
         self.path.touch()
 
         self._structure: STRUCTURE = self.empty()
@@ -47,6 +59,12 @@ class Database:
     @classmethod
     @contextmanager
     def open(cls, path: Union[str, Path]) -> Generator["Database", None, None]:
+        """
+        Open a database using a context manager.
+
+        :yield: A fully initialized database object
+        :rtype: Database
+        """
         path = Path(path)
 
         with open(path, "r", encoding="utf-8") as fp:
@@ -124,6 +142,25 @@ class Database:
         if not isinstance(value, bool):
             raise TypeError("backups_enabled must be a boolean")
         self._backups_enabled = value
+
+    @property
+    def tags(self) -> set[str]:
+        """A set of tags the database owns. Read-only."""
+        return self._tags
+
+    @property
+    def entries(self) -> int:
+        """
+        The number of data entries being present in the database. Read-only.
+        """
+        return len(self._data)
+
+    def calc_bytes(self) -> int:
+        """
+        Calculate the amount of bytes the json representation takes up in
+        memory.
+        """
+        return sys.getsizeof(json.dumps(self.build_structure()))
 
     def add_tag(self, tag: str) -> None:
         """
@@ -441,6 +478,7 @@ def register_database(db: Union[Path, str]) -> None:
 
     :param db: The path to the database file (commonly .jsondb)
     :type db: Union[Path, str]
+    :raises RuntimeError: A database with the same name is already registered
     """
     db = Path(db)
     path = JSONDB_HOME_PATH / ".paths"

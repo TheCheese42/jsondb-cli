@@ -8,11 +8,63 @@ from .version import version_string
 
 
 def sub_init(args: argparse.Namespace) -> None:
-    ...
+    try:
+        db = model.Database(args.name, args.path)
+    except FileExistsError:
+        print(
+            "[CRITICAL] A database with this name already exists in "
+            f"{args.path}"
+        )
+        sys.exit(1)
+    db.save()
+    model.init_register_file()
+    try:
+        model.register_database(db.path)
+    except RuntimeError:
+        print(
+            f"[ERROR] A database called '{args.name}' is already registered "
+            "elsewhere"
+        )
+        sys.exit(2)
 
 
 def sub_info(args: argparse.Namespace) -> None:
-    ...
+    path = model.find_database(args.name)
+    if path is None:
+        print(
+            "[CRITICAL] The specified database could not be found"
+        )
+        sys.exit(4)
+    try:
+        with model.Database.open(path) as db:
+            actions_dict = {
+                "tags": lambda: ", ".join(db.tags),
+                "size": lambda: str(db.entries),
+                "bytes": lambda: str(db.calc_bytes()),
+                "path": lambda: str(db.path.resolve()),
+                "backups_enabled": lambda: str(db.backups_enabled),
+                "enforce_tags": lambda: str(db.enforce_tags),
+            }
+            # Type comments are due to lambdas, might get changed in future
+            # mypy versions
+            if not args.subject:
+                message = (
+                    f"Tags: {actions_dict['tags']()}\n"  # type: ignore[no-untyped-call]  # noqa
+                    f"Size: {actions_dict['size']()}\n"  # type: ignore[no-untyped-call]  # noqa
+                    f"Bytes: {actions_dict['bytes']()}\n"  # type: ignore[no-untyped-call]  # noqa
+                    f"Path: {actions_dict['path']()}\n"  # type: ignore[no-untyped-call]  # noqa
+                    f"Backups enabled: {actions_dict['backups_enabled']()}\n"  # type: ignore[no-untyped-call]  # noqa
+                    f"Tags enforced: {actions_dict['enforce_tags']()}"  # type: ignore[no-untyped-call]  # noqa
+                )
+            else:
+                message = actions_dict[args.subject]()  # type: ignore[no-untyped-call]  # noqa
+    except FileNotFoundError:
+        print(
+            f"[CRITICAL] The registered database {args.name} at "
+            f"{path} doesn't exist."
+        )
+        sys.exit(3)
+    print(message)
 
 
 def sub_modify(args: argparse.Namespace) -> None:
@@ -20,6 +72,14 @@ def sub_modify(args: argparse.Namespace) -> None:
 
 
 def sub_add_db(args: argparse.Namespace) -> None:
+    ...
+
+
+def sub_rm_db(args: argparse.Namespace) -> None:
+    ...
+
+
+def sub_dbs(args: argparse.Namespace) -> None:
     ...
 
 
@@ -113,12 +173,17 @@ def main() -> None:
         "--subject",
         action="store",
         type=str,
-        choices=["tags", "size", "bytes", "path"],
+        choices=["tags", "size", "bytes", "path",
+                 "backups_enabled", "enforce_tags"],
         required=False,
         default=None,
         dest="subject",
         help="Get information about a specific thing. Leave empty to retrieve "
-             "all available information."
+             "all available information. Choices are 'tags' (list of "
+             "registered tags), 'size' (amount of entries), 'bytes' (amount "
+             "of bytes it takes up as json string in memory), 'path' (The "
+             "database path), 'backups_enabled' (wether backups are enabled), "
+             "'enforce_tags' (wether tags are actually being enforced).",
     )
     info.set_defaults(func=sub_info)
 
@@ -202,6 +267,31 @@ def main() -> None:
         help="The full path to the .jsondb file.",
     )
     add_db.set_defaults(func=sub_add_db)
+
+    rm_db_help = "Remove a database file from the list of registered " \
+                 "databases."
+    rm_db = subparsers.add_parser(
+        "rm-db",
+        help=rm_db_help,
+        description=rm_db_help,
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    rm_db.add_argument(
+        "path",
+        action="store",
+        type=Path,
+        help="The full path to the .jsondb file.",
+    )
+    rm_db.set_defaults(func=sub_rm_db)
+
+    dbs_help = "List all registered databases, one per line."
+    dbs = subparsers.add_parser(
+        "dbs",
+        help=dbs_help,
+        description=dbs_help,
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    dbs.set_defaults(func=sub_dbs)
 
     set_help = "Set new data to a database."
     set_ = subparsers.add_parser(
