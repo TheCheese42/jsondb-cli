@@ -1,7 +1,11 @@
 import json
 import re
+import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterable, Optional, Union
+from typing import Generator, Iterable, Optional, Union
+
+from .version import __version__, version_string
 
 TAGS = set[str]
 ENFORCE_TAGS = bool
@@ -9,12 +13,14 @@ BACKUPS_ENABLED = bool
 ATTRS = dict[str, Union[str, int, float, bool]]
 DATA_ENTRY = tuple[str, TAGS, ATTRS]
 DATA = list[DATA_ENTRY]
+VERSION = str
 STRUCTURE = dict[
     str,
-    Union[TAGS, DATA, ENFORCE_TAGS, BACKUPS_ENABLED]
+    Union[TAGS, DATA, ENFORCE_TAGS, BACKUPS_ENABLED, VERSION]
 ]
 
 DEFAULT_FORMAT_STRING = '[%id(3)] "%data()" (%tags(", ")) (%attrs(": ","; "))'
+JSONDB_HOME_PATH = Path.home() / "Documents" / "jsondb"
 
 
 class Database:
@@ -24,7 +30,7 @@ class Database:
         dir: Optional[Union[str, Path]] = None,
     ) -> None:
         if dir is None:
-            dir = Path.home() / "Documents" / "jsondb"
+            dir = JSONDB_HOME_PATH
 
         self.path = Path(dir) / name
         if self.path.exists():
@@ -38,19 +44,86 @@ class Database:
         self._backups_enabled: bool = self._structure["backups_enabled"]  # type: ignore[assignment] # noqa
         self._data: DATA = self._structure["data"]  # type: ignore[assignment]
 
+    @classmethod
+    @contextmanager
+    def open(cls, path: Union[str, Path]) -> Generator["Database", None, None]:
+        path = Path(path)
+
+        with open(path, "r", encoding="utf-8") as fp:
+            json_ = fp.read()
+
+        db = Database.__new__(Database)
+        db.path = Path(path)
+        structure = json.loads(json_)
+        if __version__ < tuple(map(int, structure["version"].split("."))):
+            print(
+                f"[WARNING] The database at {path} was last modified by jsondb"
+                f" version {structure['version']}, which is newer than the "
+                f"currently installed ({version_string}). Please consider "
+                "upgrading."
+            )
+        db._structure = structure
+        db._tags = structure["tags"]
+        db._enforce_tags = structure["enforce_tags"]
+        db._backups_enabled = structure["backups_enabled"]
+        db._data = structure["data"]
+
+        if db.backups_enabled:
+            backup_dir = path.parent / f".jsondb_backups_{path.stem}"
+            backup_dir.mkdir(exist_ok=True)
+            timestamp = int(time.time())
+            with open(
+                backup_dir / f".jsondb_backup_{path.stem}_{timestamp}.jsondb",
+                mode="w",
+                encoding="utf-8",
+            ) as fp:
+                fp.write(json_)
+
+        try:
+            yield db
+        finally:
+            db.save()
+
+    def save(self) -> None:
+        with open(self.path, "w", encoding="utf-8") as fp:
+            json.dump(self.build_structure(), fp)
+
+    def build_structure(self) -> STRUCTURE:
+        return {
+            "tags": self._tags,
+            "enforce_tags": self._enforce_tags,
+            "backups_enabled": self._backups_enabled,
+            "data": self._data,
+            "version": ".".join(map(str, __version__)),
+        }
+
     @property
     def enforce_tags(self) -> bool:
         """
         Wether tags should actually be enforced or one could just use any tag,
         no matter if it's specified in tags.
         """
-        return self._structure["enforce_tags"]  # type: ignore[return-value]
+        return self._enforce_tags
 
     @enforce_tags.setter
     def enforce_tags(self, value: bool) -> None:
         if not isinstance(value, bool):
             raise TypeError("enforce_tags must be a boolean")
-        self._structure["enforce_tags"] = value
+        self._enforce_tags = value
+
+    @property
+    def backups_enabled(self) -> bool:
+        """
+        Wether backups are being made before every change. Those will reside in
+        a .jsondb_backups_<database> folder next to the database itself.
+        """
+        return self._backups_enabled
+
+    @backups_enabled.setter
+    def backups_enabled(self, value: bool) -> None:
+        if not isinstance(value, bool):
+            raise TypeError("backups_enabled must be a boolean")
+        self._backups_enabled = value
 
     def add_tag(self, tag: str) -> None:
         """
@@ -331,4 +404,87 @@ class Database:
             "enforce_tags": False,
             "backups_enabled": False,
             "data": [],
+            "version": ".".join(map(str, __version__)),
         }
+
+
+def init_register_file(clear: bool = False) -> None:
+    """
+    Create the .paths register file in the Documents/jsondb directory. If
+    present, this will do nothing.
+
+    :param clear: This will wipe the current file, defaults to False
+    :type clear: bool, optional
+    """
+    JSONDB_HOME_PATH.mkdir(exist_ok=True)
+    path = JSONDB_HOME_PATH / ".paths"
+    if not path.exists() or clear:
+        with open(path, "w", encoding="utf-8"):
+            pass
+
+
+def read_register_file() -> list[Path]:
+    """
+    Returns a list of all database files registered.
+
+    :returns: A list of database file paths
+    :rtype: list[Path]
+    """
+    path = JSONDB_HOME_PATH / ".paths"
+    with open(path, "r", encoding="utf-8") as fp:
+        return [i for i in map(Path, fp.readlines()) if i]
+
+
+def register_database(db: Union[Path, str]) -> None:
+    """
+    Register a database file.
+
+    :param db: The path to the database file (commonly .jsondb)
+    :type db: Union[Path, str]
+    """
+    db = Path(db)
+    path = JSONDB_HOME_PATH / ".paths"
+    with open(path, "r", encoding="utf-8") as fp:
+        dbs = fp.readlines()
+    for registered_db in dbs:
+        if Path(registered_db).stem == db.stem:
+            raise RuntimeError(
+                f"A database with name {db.stem} exists already."
+            )
+    with open(path, "a", encoding="utf-8") as fp:
+        fp.write(str(db.resolve()) + "\n")
+
+
+def unregister_database(db: Union[Path, str]) -> None:
+    """
+    Unregister a database file.
+
+    :param db: The path to the database file (commonly .jsondb)
+    :type db: Union[Path, str]
+    """
+    db = Path(db)
+    path = JSONDB_HOME_PATH / ".paths"
+    with open(path, "r", encoding="utf-8") as fp:
+        dbs = fp.readlines()
+    dbs = [i for i in dbs if Path(i) != db]
+    with open(path, "w", encoding="utf-8") as fp:
+        fp.writelines(dbs)
+
+
+def find_database(db: str) -> Path:
+    """
+    Find a database file path by its name.
+
+    :param db: The name of the database (filename without suffix)
+    :type db: str
+    :returns: The database file path
+    :rtype: Path
+    :raises FileNotFoundError: The database file isn't registered
+    """
+    path = JSONDB_HOME_PATH / ".paths"
+    with open(path, "r", encoding="utf-8") as fp:
+        dbs = fp.readlines()
+    for file in dbs:
+        if Path(file).stem == db:
+            return Path(file)
+    raise FileNotFoundError(f"The database {db} is not registered")
