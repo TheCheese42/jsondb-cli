@@ -9,6 +9,7 @@ from typing import Generator, Iterable, Optional, Union
 from .version import __version__, version_string
 
 TAGS = set[str]
+SERIALIZABLE_TAGS = list[str]
 ENFORCE_TAGS = bool
 BACKUPS_ENABLED = bool
 ATTRS = dict[str, Union[str, int, float, bool]]
@@ -18,6 +19,10 @@ VERSION = str
 STRUCTURE = dict[
     str,
     Union[TAGS, DATA, ENFORCE_TAGS, BACKUPS_ENABLED, VERSION]
+]
+SERIALIZABLE_STRUCTURE = dict[
+    str,
+    Union[SERIALIZABLE_TAGS, DATA, ENFORCE_TAGS, BACKUPS_ENABLED, VERSION]
 ]
 
 DEFAULT_FORMAT_STRING = '[%id(3)] "%data()" (%tags(", ")) (%attrs(": ","; "))'
@@ -106,9 +111,9 @@ class Database:
         with open(self.path, "w", encoding="utf-8") as fp:
             json.dump(self.build_structure(), fp)
 
-    def build_structure(self) -> STRUCTURE:
+    def build_structure(self) -> SERIALIZABLE_STRUCTURE:
         return {
-            "tags": self._tags,
+            "tags": list(self._tags),
             "enforce_tags": self._enforce_tags,
             "backups_enabled": self._backups_enabled,
             "data": self._data,
@@ -269,6 +274,14 @@ class Database:
         self._data.append((data, set(tags), attrs))
 
     def unset(self, index: int) -> None:
+        """
+        Remove a data entry by its index.
+
+        :param index: The entry's index
+        :type index: int
+        :raises TypeError: The index isn't an integer
+        :raises IndexError: The specified index does not exist
+        """
         if not isinstance(index, int):
             raise TypeError("index must be an integer")
         try:
@@ -277,6 +290,16 @@ class Database:
             raise IndexError(f"Index {index} does not exist")
 
     def id(self, data: str) -> int:
+        """
+        Get the index of a data string. This will always take the first
+        matching occurrence.
+
+        :param data: The exact data string
+        :type data: str
+        :raises ValueError: Requested data is not in the database
+        :return: Index of the data string
+        :rtype: int
+        """
         for i, entry in enumerate(self._data):
             if data == entry[0]:
                 return i
@@ -467,6 +490,7 @@ def read_register_file() -> list[Path]:
     :returns: A list of database file paths
     :rtype: list[Path]
     """
+    init_register_file()
     path = JSONDB_HOME_PATH / ".paths"
     with open(path, "r", encoding="utf-8") as fp:
         return [i for i in map(Path, fp.readlines()) if i]
@@ -480,6 +504,7 @@ def register_database(db: Union[Path, str]) -> None:
     :type db: Union[Path, str]
     :raises RuntimeError: A database with the same name is already registered
     """
+    init_register_file()
     db = Path(db)
     path = JSONDB_HOME_PATH / ".paths"
     with open(path, "r", encoding="utf-8") as fp:
@@ -493,20 +518,29 @@ def register_database(db: Union[Path, str]) -> None:
         fp.write(str(db.resolve()) + "\n")
 
 
-def unregister_database(db: Union[Path, str]) -> None:
+def unregister_database(db: str) -> None:
     """
-    Unregister a database file.
+    Unregister a database file by its name.
 
-    :param db: The path to the database file (commonly .jsondb)
-    :type db: Union[Path, str]
+    :param db: The name of the database (filename without extension)
+    :type db: str
+    :raises RuntimeError: Database wasn't registered
     """
-    db = Path(db)
+    init_register_file()
     path = JSONDB_HOME_PATH / ".paths"
     with open(path, "r", encoding="utf-8") as fp:
         dbs = fp.readlines()
-    dbs = [i for i in dbs if Path(i) != db]
+    dbs_filtered = []
+    success = False
+    for i in dbs:
+        if Path(i).stem != db:
+            dbs_filtered.append(i)
+        else:
+            success = True
+    if not success:
+        raise RuntimeError(f"Database {db} wasn't registered")
     with open(path, "w", encoding="utf-8") as fp:
-        fp.writelines(dbs)
+        fp.writelines(dbs_filtered)
 
 
 def find_database(db: str) -> Path:
@@ -521,7 +555,7 @@ def find_database(db: str) -> Path:
     """
     path = JSONDB_HOME_PATH / ".paths"
     with open(path, "r", encoding="utf-8") as fp:
-        dbs = fp.readlines()
+        dbs = fp.read().splitlines()
     for file in dbs:
         if Path(file).stem == db:
             return Path(file)

@@ -5,3 +5,7 @@
 3: File not found
 4: Database not registered
 5: Multiple mutually exclusive flags used
+6: Database wasn't registered
+7: Tag not registered
+8: Invalid attribute format
+9: Index does not exist

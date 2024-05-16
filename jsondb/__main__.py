@@ -2,7 +2,7 @@ import argparse
 import sys
 from pathlib import Path
 from textwrap import dedent
-from typing import Optional, Union
+from typing import Optional, Union, Iterable
 from . import model
 from .version import version_string
 import os
@@ -14,7 +14,7 @@ SUPPRESS_WARNINGS = False
 def validate_path(path: Optional[Union[str, Path]]) -> None:
     if path is None:
         print(
-            "[CRITICAL] The specified database could not be found"
+            "[CRITICAL] The specified database could not be found."
         )
         sys.exit(4)
 
@@ -27,13 +27,32 @@ def database_does_not_exist(name: str, path: Union[str, Path]) -> None:
     sys.exit(3)
 
 
+def invalid_tags(tags: Iterable[str]) -> None:
+    print(
+        f"[ERROR] The following tags weren't registered: {', '.join(tags)}."
+    )
+    sys.exit(7)
+
+
+def invalid_attrs_format(entry: str) -> None:
+    print(
+        f"[ERROR] Invalid --attr: '{entry}' (Should be of format 'KEY:VALUE')."
+    )
+    sys.exit(8)
+
+
+def index_out_of_bounds(index: int) -> None:
+    print(f"[ERROR] Index {index} does not exist.")
+    sys.exit(9)
+
+
 def sub_init(args: argparse.Namespace) -> None:
     try:
         db = model.Database(args.name, args.path)
     except FileExistsError:
         print(
             "[CRITICAL] A database with this name already exists in "
-            f"{args.path}"
+            f"{args.path or model.JSONDB_HOME_PATH}."
         )
         sys.exit(1)
     db.save()
@@ -43,7 +62,7 @@ def sub_init(args: argparse.Namespace) -> None:
     except RuntimeError:
         print(
             f"[ERROR] A database called '{args.name}' is already registered "
-            "elsewhere"
+            "elsewhere."
         )
         sys.exit(2)
 
@@ -121,23 +140,71 @@ def sub_modify(args: argparse.Namespace) -> None:
 
 
 def sub_add_db(args: argparse.Namespace) -> None:
-    ...
+    try:
+        model.register_database(args.path)
+    except RuntimeError:
+        print(
+            f"[ERROR] A database with the name '{args.path.stem}' is already"
+            "registered."
+        )
+        sys.exit(2)
 
 
 def sub_rm_db(args: argparse.Namespace) -> None:
-    ...
+    try:
+        model.unregister_database(args.name)
+    except RuntimeError:
+        print(
+            f"[ERROR] The database {args.name} wasn't registered."
+        )
+        sys.exit(6)
 
 
 def sub_dbs(args: argparse.Namespace) -> None:
-    ...
+    print("\n".join(map(str, model.read_register_file())))
 
 
 def sub_set(args: argparse.Namespace) -> None:
-    ...
+    path = model.find_database(args.name)
+    validate_path(path)
+    attrs: dict[str, Union[str, int, float, bool]] = {}
+    for entry in args.attrs:
+        try:
+            key, value = entry.split(":", 1)
+        except ValueError:
+            invalid_attrs_format(entry)
+        if value.isdecimal():
+            value = int(value)
+        else:
+            try:
+                value = float(value)
+            except ValueError:
+                if value.lower() == "true":
+                    value = True
+                elif value.lower() == "false":
+                    value = False
+        attrs[key] = value
+    try:
+        with model.Database.open(path) as db:
+            try:
+                db.set(args.data, *args.tags, **attrs)
+            except ValueError:
+                invalid_tags(set(args.tags).difference(db.tags))
+    except FileNotFoundError:
+        database_does_not_exist(args.name, path)
 
 
 def sub_unset(args: argparse.Namespace) -> None:
-    ...
+    path = model.find_database(args.name)
+    validate_path(path)
+    try:
+        with model.Database.open(path) as db:
+            try:
+                db.unset(args.index)
+            except IndexError:
+                index_out_of_bounds(args.index)
+    except FileNotFoundError:
+        database_does_not_exist(args.name, path)
 
 
 def sub_shell(args: argparse.Namespace) -> None:
@@ -350,10 +417,10 @@ def main() -> None:
         formatter_class=argparse.RawTextHelpFormatter,
     )
     rm_db.add_argument(
-        "path",
+        "name",
         action="store",
-        type=Path,
-        help="The full path to the .jsondb file.",
+        type=str,
+        help="The database name (filename without extension).",
     )
     rm_db.set_defaults(func=sub_rm_db)
 
@@ -409,7 +476,8 @@ def main() -> None:
         dest="attrs",
         help="A key: value pair that should be kept in the data's attributes. "
              "Should be of format `KEY:VALUE` (KEY may not contain a colon). "
-             "Can be used multiple times.",
+             "VALUE may be either any string, an integer, a float or a boolean"
+             " (\"True\", \"False\"). Can be used multiple times.",
     )
     set_.set_defaults(func=sub_set)
 
@@ -429,7 +497,7 @@ def main() -> None:
     unset.add_argument(
         "index",
         action="store",
-        type=str,
+        type=int,
         help="The index of the data entry to be deleted. Negative indices are "
              "allowed.",
     )
@@ -611,7 +679,8 @@ def main() -> None:
     format_.set_defaults(func=sub_format)
 
     SUPPRESS_WARNINGS = bool(os.getenv("JSONDB_SUPPRESS_WARNINGS"))
-    parser.parse_args()
+    args = parser.parse_args()
+    args.func(args)
 
 
 if __name__ == "__main__":
