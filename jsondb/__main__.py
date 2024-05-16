@@ -2,9 +2,29 @@ import argparse
 import sys
 from pathlib import Path
 from textwrap import dedent
-
+from typing import Optional, Union
 from . import model
 from .version import version_string
+import os
+
+
+SUPPRESS_WARNINGS = False
+
+
+def validate_path(path: Optional[Union[str, Path]]) -> None:
+    if path is None:
+        print(
+            "[CRITICAL] The specified database could not be found"
+        )
+        sys.exit(4)
+
+
+def database_does_not_exist(name: str, path: Union[str, Path]) -> None:
+    print(
+        f"[CRITICAL] The registered database {name} at "
+        f"{path} doesn't exist."
+    )
+    sys.exit(3)
 
 
 def sub_init(args: argparse.Namespace) -> None:
@@ -30,11 +50,7 @@ def sub_init(args: argparse.Namespace) -> None:
 
 def sub_info(args: argparse.Namespace) -> None:
     path = model.find_database(args.name)
-    if path is None:
-        print(
-            "[CRITICAL] The specified database could not be found"
-        )
-        sys.exit(4)
+    validate_path(path)
     try:
         with model.Database.open(path) as db:
             actions_dict = {
@@ -59,16 +75,49 @@ def sub_info(args: argparse.Namespace) -> None:
             else:
                 message = actions_dict[args.subject]()  # type: ignore[no-untyped-call]  # noqa
     except FileNotFoundError:
-        print(
-            f"[CRITICAL] The registered database {args.name} at "
-            f"{path} doesn't exist."
-        )
-        sys.exit(3)
+        database_does_not_exist(args.name, path)
     print(message)
 
 
 def sub_modify(args: argparse.Namespace) -> None:
-    ...
+    if args.enforce_tags and args.no_enforce_tags:
+        print(
+            "[ERROR] --enforce-tags and --no-enforce-tags are mutually "
+            "exclusive."
+        )
+        sys.exit(5)
+    if args.enable_backups and args.disable_backups:
+        print(
+            "[ERROR] --enable-backups and --disable_backups are mutually "
+            "exclusive."
+        )
+        sys.exit(5)
+    if args.add_tags and args.clear_tags and not SUPPRESS_WARNINGS:
+        print(
+            "[WARNING] --add-tag will be overridden by --clear-tags. Suppress "
+            "this warning by setting the JSONDB_SUPPRESS_WARNINGS environment "
+            "variable to 1."
+        )
+    path = model.find_database(args.name)
+    validate_path(path)
+    try:
+        with model.Database.open(path) as db:
+            if args.add_tags:
+                db.add_tags(args.add_tags)
+            if args.rm_tags:
+                db.rm_tags(args.rm_tags)
+            if args.clear_tags:
+                db.clear_tags()
+            if args.enforce_tags:
+                db.enforce_tags = True
+            if args.no_enforce_tags:
+                db.enforce_tags = False
+            if args.enable_backups:
+                db.backups_enabled = True
+            if args.disable_backups:
+                db.backups_enabled = False
+    except FileNotFoundError:
+        database_does_not_exist(args.name, path)
 
 
 def sub_add_db(args: argparse.Namespace) -> None:
@@ -112,9 +161,15 @@ def sub_format(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    global SUPPRESS_WARNINGS
+
     parser = argparse.ArgumentParser(
         prog="jsondb",
-        description="A cli used to manage small, handy databases.",
+        description="A cli used to manage small, handy databases.\n\n"
+                    "Supported environment variables:\n- "
+                    "JSONDB_SUPPRESS_WARNINGS (Suppress all warnings)\n- "
+                    "JSONDB_BACKUP_KEEP_COUNT (How many backups should be kept"
+                    " per database)",
         epilog="GitHub: https://NotYou404/jsondb-cli",
         formatter_class=argparse.RawTextHelpFormatter,
     )
@@ -250,6 +305,24 @@ def main() -> None:
         default=False,
         dest="no_enforce_tags",
         help="Do not enforce tags anymore."
+    )
+    modify.add_argument(
+        "--enable-backups",
+        action="store_true",
+        required=False,
+        default=False,
+        dest="enable_backups",
+        help="Enable backups to be made after every change. Will keep up to "
+             "20 Backups per database, unless otherwise specified using the "
+             "JSONDB_BACKUP_KEEP_COUNT environment variable.",
+    )
+    modify.add_argument(
+        "--disable-backups",
+        action="store_true",
+        required=False,
+        default=False,
+        dest="disable_backups",
+        help="Disable making backups after every change.",
     )
     modify.set_defaults(func=sub_modify)
 
@@ -537,6 +610,7 @@ def main() -> None:
     )
     format_.set_defaults(func=sub_format)
 
+    SUPPRESS_WARNINGS = bool(os.getenv("JSONDB_SUPPRESS_WARNINGS"))
     parser.parse_args()
 
 
