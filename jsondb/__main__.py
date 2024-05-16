@@ -11,12 +11,13 @@ import os
 SUPPRESS_WARNINGS = False
 
 
-def validate_path(path: Optional[Union[str, Path]]) -> None:
+def validate_path(path: Optional[Union[str, Path]]) -> Path:
     if path is None:
         print(
             "[CRITICAL] The specified database could not be found."
         )
         sys.exit(4)
+    return Path(path)
 
 
 def database_does_not_exist(name: str, path: Union[str, Path]) -> None:
@@ -69,7 +70,7 @@ def sub_init(args: argparse.Namespace) -> None:
 
 def sub_info(args: argparse.Namespace) -> None:
     path = model.find_database(args.name)
-    validate_path(path)
+    path = validate_path(path)
     try:
         with model.Database.open(path) as db:
             actions_dict = {
@@ -118,7 +119,7 @@ def sub_modify(args: argparse.Namespace) -> None:
             "variable to 1."
         )
     path = model.find_database(args.name)
-    validate_path(path)
+    path = validate_path(path)
     try:
         with model.Database.open(path) as db:
             if args.add_tags:
@@ -166,7 +167,7 @@ def sub_dbs(args: argparse.Namespace) -> None:
 
 def sub_set(args: argparse.Namespace) -> None:
     path = model.find_database(args.name)
-    validate_path(path)
+    path = validate_path(path)
     attrs: dict[str, Union[str, int, float, bool]] = {}
     for entry in args.attrs:
         try:
@@ -196,7 +197,7 @@ def sub_set(args: argparse.Namespace) -> None:
 
 def sub_unset(args: argparse.Namespace) -> None:
     path = model.find_database(args.name)
-    validate_path(path)
+    path = validate_path(path)
     try:
         with model.Database.open(path) as db:
             try:
@@ -208,7 +209,44 @@ def sub_unset(args: argparse.Namespace) -> None:
 
 
 def sub_shell(args: argparse.Namespace) -> None:
-    ...
+    path = model.find_database(args.name)
+    validate_path(path)
+    allowed_commands = ["info", "modify", "set", "unset", "browse", "id",
+                        "query", "format"]
+    print(f"jsondb-cli {version_string} Shell")
+    print("Enter 'help' for a detailed explanation of what can be done here.")
+    while True:
+        try:
+            cmd = input(f"({args.name}) $ ")
+        except (KeyboardInterrupt, EOFError):
+            print()
+            sys.exit(0)
+        if cmd == "help":
+            available_commands = "- " + "\n- ".join(allowed_commands)
+            print(
+                f"This is the jsondb-cli {version_string} Shell.\n"
+                "Here you can enter jsondb commands without having to type "
+                "'jsondb' and the name parameter which is necessary for most "
+                "commands. All commands using the 'name' parameter can be used"
+                f" from here.\n\nAvailable commands:\n{available_commands}\n\n"
+                "Example:\n$ info --size\n42\n"
+            )
+            continue
+        elif cmd in ("exit", "quit"):
+            sys.exit(0)
+        cmd_args = cmd.split()
+        if cmd_args[0] not in allowed_commands:
+            print(
+                f"Invalid command {cmd_args[0]}. Enter 'help' for more info."
+            )
+            continue
+        try:
+            # Not the prettiest approach, especially for error messages, but
+            # works effectively with low effort
+            main([cmd_args[0], args.name, *cmd_args[1:]])
+        except (SystemExit, Exception) as e:
+            if not isinstance(e, SystemExit):
+                print(f"{type(e)}: {e}")
 
 
 def sub_browse(args: argparse.Namespace) -> None:
@@ -227,7 +265,7 @@ def sub_format(args: argparse.Namespace) -> None:
     ...
 
 
-def main() -> None:
+def main(argv: Optional[list[str]] = None) -> None:
     global SUPPRESS_WARNINGS
 
     parser = argparse.ArgumentParser(
@@ -679,7 +717,7 @@ def main() -> None:
     format_.set_defaults(func=sub_format)
 
     SUPPRESS_WARNINGS = bool(os.getenv("JSONDB_SUPPRESS_WARNINGS"))
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     args.func(args)
 
 

@@ -543,15 +543,14 @@ def unregister_database(db: str) -> None:
         fp.writelines(dbs_filtered)
 
 
-def find_database(db: str) -> Path:
+def find_database(db: str) -> Optional[Path]:
     """
-    Find a database file path by its name.
+    Find a database file path by its name. If not found returns None.
 
     :param db: The name of the database (filename without suffix)
     :type db: str
-    :returns: The database file path
-    :rtype: Path
-    :raises FileNotFoundError: The database file isn't registered
+    :returns: The database file path or None, if not found
+    :rtype: Optional[Path]
     """
     path = JSONDB_HOME_PATH / ".paths"
     with open(path, "r", encoding="utf-8") as fp:
@@ -559,4 +558,4 @@ def find_database(db: str) -> Path:
     for file in dbs:
         if Path(file).stem == db:
             return Path(file)
-    raise FileNotFoundError(f"The database {db} is not registered")
+    return None
