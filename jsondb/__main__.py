@@ -1,12 +1,14 @@
 import argparse
+import os
 import sys
+import time
+from contextlib import suppress
 from pathlib import Path
 from textwrap import dedent
-from typing import Optional, Union, Iterable
+from typing import Iterable, Optional, Union
+
 from . import model
 from .version import version_string
-import os
-
 
 SUPPRESS_WARNINGS = False
 
@@ -45,6 +47,81 @@ def invalid_attrs_format(entry: str) -> None:
 def index_out_of_bounds(index: int) -> None:
     print(f"[ERROR] Index {index} does not exist.")
     sys.exit(9)
+
+
+def gen_browse_table(
+    db: model.Database,
+    page: int = 0,
+    page_length: int = 10,
+    filter_tags: Iterable[str] = (),
+) -> tuple[str, list[int]]:
+    """
+    Generate a table with data from a given database.
+
+    :param db: The database to take data from
+    :type db: model.Database
+    :param page: The current page of the table, defaults to 0
+    :type page: int, optional
+    :param page_length: How many entries there are per page, defaults to 10
+    :type page_length: int, optional
+    :param filter_tags: An iterable of tags to filter the table for, defaults
+    to ()
+    :type filter_tags: Iterable[str], optional
+    :return: A tuple with the generated table and a list of ids on the page
+    :rtype: tuple[str, list[int]]
+    """
+    id_width = max(len(str(db.entries - 1)), 3)
+    data_width = 100
+    header = f"{' ' * (id_width - 2)}ID | DATA{' ' * (data_width - 5)}"
+    sep = f"{'-' * (id_width + 1)}|{'-' * data_width}"
+    rows: list[str] = []
+    entry_range = range((start := page_length * page), start + page_length)
+    filter_result = db.query(filter_tags)
+    entries_on_page: list[int] = []
+    for i in entry_range:
+        try:
+            entry = db.at_index(filter_result[i])
+            entries_on_page.append(filter_result[i])
+        except IndexError:
+            continue
+        if len(entry[0]) > data_width:
+            data = entry[0][:data_width - 3] + "..."
+        else:
+            data = entry[0]
+        rows.append(f"{filter_result[i]:0>{id_width}} | {data}")
+    return "\n".join([header, sep, *rows]), entries_on_page
+
+
+def gen_browse_data_entry(entry: model.DATA_ENTRY) -> str:
+    data = f"\"{entry[0]}\"\n"
+    tags = f"Tags: {', '.join(entry[1])}"
+    attrs_strings = [f"{k}: {v}" for k, v in entry[2].items()]
+    attrs = f"Attributes:\n    {'\n    '.join(attrs_strings)}"
+    return "\n".join([data, tags, attrs])
+
+
+def parse_attr_value(value: str) -> Union[str, int, float, bool]:
+    """
+    Parse an ATTR value from a string.
+
+    :param value: The string value
+    :type value: str
+    :return: The parsed value
+    :rtype: Union[str, int, float, bool]
+    """
+    if value.isdecimal():
+        new_value: Union[str, int, float, bool] = int(value)
+    else:
+        try:
+            new_value = float(value)
+        except ValueError:
+            if value.lower() == "true":
+                new_value = True
+            elif value.lower() == "false":
+                new_value = False
+            else:
+                new_value = value
+    return new_value
 
 
 def sub_init(args: argparse.Namespace) -> None:
@@ -174,16 +251,7 @@ def sub_set(args: argparse.Namespace) -> None:
             key, value = entry.split(":", 1)
         except ValueError:
             invalid_attrs_format(entry)
-        if value.isdecimal():
-            value = int(value)
-        else:
-            try:
-                value = float(value)
-            except ValueError:
-                if value.lower() == "true":
-                    value = True
-                elif value.lower() == "false":
-                    value = False
+        value = parse_attr_value(value)
         attrs[key] = value
     try:
         with model.Database.open(path) as db:
@@ -250,7 +318,143 @@ def sub_shell(args: argparse.Namespace) -> None:
 
 
 def sub_browse(args: argparse.Namespace) -> None:
-    ...
+    path = model.find_database(args.name)
+    path = validate_path(path)
+    try:
+        with model.Database.open(path) as db:
+            page = 0
+            page_length = 10
+            while True:
+                table, id_range = gen_browse_table(
+                    db, page, page_length, args.filters
+                )
+                notice = f"Filtering for tags: {', '.join(args.filters)}\n"
+                print(
+                    f"\n{notice if args.filters else ''}"
+                    f"\n{table}\n\n[ID] Select entry{' ' * 5}[N] Next{' ' * 5}"
+                    f"[P] Previous{' ' * 5}[E] Exit\n"
+                )
+                try:
+                    choice = input("> ")
+                except (KeyboardInterrupt, EOFError):
+                    print()
+                    sys.exit(0)
+                try:
+                    id_choice = int(choice)
+                except ValueError:
+                    if choice.lower() in ("n", "next"):
+                        page = min(
+                            page + 1, max(db.entries - 1, 0) // page_length
+                        )
+                    elif choice.lower() in ("p", "previous", "prev"):
+                        page = max(page - 1, 0)
+                    elif choice.lower() in ("e", "exit", "quit"):
+                        sys.exit(0)
+                    else:
+                        print(
+                            "Invalid input. Please enter either an ID to "
+                            "select, [N] for the next page or [P] for the "
+                            "previous page."
+                        )
+                        time.sleep(2)
+                    continue
+                if id_choice not in id_range:
+                    print(f"Invalid ID {id_choice}.")
+                    time.sleep(2)
+                    continue
+                while True:
+                    output = gen_browse_data_entry(db.at_index(id_choice))
+                    print(
+                        f"""\n{output}\n
+[E <DATA>] Edit data
+[A <TAGS>] Add tag (Can add multiple separated by whitespace)
+[R <TAGS>] Remove tag (Can remove multiple separated by whitespace)
+[S <ATTRS>] Set attribute (KEY:VALUE) (Can set multiple separated by \
+whitespace)
+[U <ATTRS>] Unset attribute (Can unset multiple separated by whitespace)
+[D] Delete\n[C] Cancel\n[H] Help\n"""
+                    )
+                    try:
+                        choice = input("> ")
+                    except (KeyboardInterrupt, EOFError):
+                        print()
+                        sys.exit(0)
+                    if choice.lower().startswith("e "):
+                        data = choice.split(maxsplit=1)[1]
+                        db.edit_id(id_choice, data=data)
+                    elif choice.lower().startswith("a "):
+                        tags = set(choice.split()[1:])
+                        for tag in db.at_index(id_choice)[1]:
+                            tags.add(tag)
+                        db.edit_id(id_choice, tags=tags)
+                    elif choice.lower().startswith("r "):
+                        tags_to_remove = choice.split()[1:]
+                        original_tags = db.at_index(id_choice)[1]
+                        for tag in tags_to_remove:
+                            with suppress(KeyError):
+                                original_tags.remove(tag)
+                        db.edit_id(id_choice, tags=original_tags)
+                    elif choice.lower().startswith("s "):
+                        attrs = choice.split()[1:]
+                        attrs_dict: model.ATTRS = {}
+                        for attr_string in attrs:
+                            try:
+                                key, value = attr_string.split(":")
+                            except ValueError:
+                                print(
+                                    f"Invalid ATTR format: {attr_string} "
+                                    "(Should be KEY:VALUE)"
+                                )
+                                continue
+                            attrs_dict[key] = parse_attr_value(value)
+                        original_attrs = db.at_index(id_choice)[2]
+                        db.edit_id(
+                            id_choice, attrs={**original_attrs, **attrs_dict}
+                        )
+                    elif choice.lower().startswith("u "):
+                        attrs_to_remove = choice.split()[1:]
+                        original_attrs = db.at_index(id_choice)[2]
+                        for attr in attrs_to_remove:
+                            original_attrs.pop(attr)
+                        db.edit_id(id_choice, attrs=original_attrs)
+                    elif choice.lower() in ("d", "delete"):
+                        if not args.no_confirmation_prompt:
+                            if input(
+                                "Do you really want to delete the entry? "
+                                "[y/N] "
+                            ).lower() not in ("y", "yes", "1", "true"):
+                                continue
+                        db.unset(id_choice)
+                        break
+                    elif choice.lower() in (
+                        "c", "cancel", "e", "exit", "quit"
+                    ):
+                        break
+                    elif choice.lower() in ("h", "help"):
+                        input("""\
+Edit the data: [E <DATA>]
+Example: 'E This is the updated data'
+
+Add a tag to the entry: [A <TAGS>]
+Example: 'A Tag1 Tag2 TagN'
+
+Remove a tag from the entry: [R <TAGS>]
+Example: 'R Tag1 Tag2 TagN'
+
+Set an attribute to the entry: [S <ATTRS>]
+Example: 'S Key1:Value1 Key2:Value2'
+
+Remove an attribute of the entry: [U <ATTRS>]
+Example: 'U Key1 Key2 KeyN'
+
+Delete the entry: [D]
+
+Cancel this operation: [C]
+
+Press ENTER to continue...""")
+
+    except FileNotFoundError:
+        database_does_not_exist(args.name, path)
 
 
 def sub_id(args: argparse.Namespace) -> None:
@@ -364,7 +568,6 @@ def main(argv: Optional[list[str]] = None) -> None:
         "-t",
         "--add-tag",
         action="append",
-        nargs=1,
         type=str,
         required=False,
         default=[],
@@ -376,7 +579,6 @@ def main(argv: Optional[list[str]] = None) -> None:
         "-r",
         "--rm-tag",
         action="append",
-        nargs=1,
         type=str,
         required=False,
         default=[],
@@ -495,7 +697,6 @@ def main(argv: Optional[list[str]] = None) -> None:
         "-t",
         "--tag",
         action="append",
-        nargs=1,
         type=str,
         required=False,
         default=[],
@@ -507,7 +708,6 @@ def main(argv: Optional[list[str]] = None) -> None:
         "-a",
         "--attr",
         action="append",
-        nargs=1,
         type=str,
         required=False,
         default=[],
@@ -574,7 +774,6 @@ def main(argv: Optional[list[str]] = None) -> None:
         "-f",
         "--filter",
         action="append",
-        nargs=1,
         type=str,
         required=False,
         default=[],
@@ -639,7 +838,6 @@ def main(argv: Optional[list[str]] = None) -> None:
         "-f",
         "--filter",
         action="append",
-        nargs=1,
         type=str,
         required=False,
         default=[],

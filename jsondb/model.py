@@ -4,12 +4,11 @@ import sys
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Generator, Iterable, Optional, Union
+from typing import Any, Generator, Iterable, Optional, Union
 
 from .version import __version__, version_string
 
 TAGS = set[str]
-SERIALIZABLE_TAGS = list[str]
 ENFORCE_TAGS = bool
 BACKUPS_ENABLED = bool
 ATTRS = dict[str, Union[str, int, float, bool]]
@@ -20,13 +19,16 @@ STRUCTURE = dict[
     str,
     Union[TAGS, DATA, ENFORCE_TAGS, BACKUPS_ENABLED, VERSION]
 ]
-SERIALIZABLE_STRUCTURE = dict[
-    str,
-    Union[SERIALIZABLE_TAGS, DATA, ENFORCE_TAGS, BACKUPS_ENABLED, VERSION]
-]
 
 DEFAULT_FORMAT_STRING = '[%id(3)] "%data()" (%tags(", ")) (%attrs(": ","; "))'
 JSONDB_HOME_PATH = Path.home() / "Documents" / "jsondb"
+
+
+class SetEncoder(json.JSONEncoder):
+    def default(self, obj: Any) -> Any:
+        if isinstance(obj, set):
+            return list(obj)
+        return json.JSONEncoder.default(self, obj)
 
 
 class Database:
@@ -76,8 +78,9 @@ class Database:
             json_ = fp.read()
 
         db = Database.__new__(Database)
-        db.path = Path(path)
+        db.path = path
         structure = json.loads(json_)
+
         if __version__ < tuple(map(int, structure["version"].split("."))):
             print(
                 f"[WARNING] The database at {path} was last modified by jsondb"
@@ -86,7 +89,7 @@ class Database:
                 "upgrading."
             )
         db._structure = structure
-        db._tags = structure["tags"]
+        db._tags = set(structure["tags"])
         db._enforce_tags = structure["enforce_tags"]
         db._backups_enabled = structure["backups_enabled"]
         db._data = structure["data"]
@@ -109,11 +112,11 @@ class Database:
 
     def save(self) -> None:
         with open(self.path, "w", encoding="utf-8") as fp:
-            json.dump(self.build_structure(), fp)
+            json.dump(self.build_structure(), fp, cls=SetEncoder)
 
-    def build_structure(self) -> SERIALIZABLE_STRUCTURE:
+    def build_structure(self) -> STRUCTURE:
         return {
-            "tags": list(self._tags),
+            "tags": self._tags,
             "enforce_tags": self._enforce_tags,
             "backups_enabled": self._backups_enabled,
             "data": self._data,
@@ -452,7 +455,7 @@ class Database:
         entry = self.at_index(id)
         new_entry = (
             data or entry[0],
-            set(tags or entry[1]),
+            set(tags or entry[1]).intersection(self.tags),
             attrs or entry[2],
         )
         self._data[id] = new_entry
