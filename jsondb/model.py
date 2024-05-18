@@ -292,19 +292,32 @@ class Database:
         except IndexError:
             raise IndexError(f"Index {index} does not exist")
 
-    def id(self, data: str) -> int:
+    def id(
+        self,
+        data: str,
+        contains: bool = False,
+        case_insensitive: bool = False,
+    ) -> int:
         """
         Get the index of a data string. This will always take the first
         matching occurrence.
 
         :param data: The exact data string
         :type data: str
+        :param contains: It's enough when data is a substring of an entry,
+        defaults to False
+        :type contains: bool, optional
+        :param case_insensitive: Search is now case-insensitive, defaults to
+        False
+        :type case_insensitive: bool, optional
         :raises ValueError: Requested data is not in the database
         :return: Index of the data string
         :rtype: int
         """
         for i, entry in enumerate(self._data):
-            if data == entry[0]:
+            if not case_insensitive and data == entry[0]:
+                return i
+            elif case_insensitive and data.lower() == entry[0].lower():
                 return i
         else:
             raise ValueError(f"'{data}' is not in the database.")
@@ -452,10 +465,26 @@ class Database:
         tags: Optional[Iterable[str]] = None,
         attrs: Optional[ATTRS] = None,
     ) -> None:
+        """
+        Edit a database entry by overriding everything specified.
+
+        :param id: The id of the entry to update
+        :type id: int
+        :param data: The new data, defaults to None
+        :type data: Optional[str], optional
+        :param tags: The new tags, defaults to None
+        :type tags: Optional[Iterable[str]], optional
+        :param attrs: The new attributes, defaults to None
+        :type attrs: Optional[ATTRS], optional
+        """
         entry = self.at_index(id)
+        if self.enforce_tags:
+            tags_ = set(tags or entry[1]).intersection(self.tags)
+        else:
+            tags_ = set(tags or entry[1])
         new_entry = (
             data or entry[0],
-            set(tags or entry[1]).intersection(self.tags),
+            tags_,
             attrs or entry[2],
         )
         self._data[id] = new_entry

@@ -9,3 +9,4 @@
 7: Tag not registered
 8: Invalid attribute format
 9: Index does not exist
+10: Requested data wasn't found

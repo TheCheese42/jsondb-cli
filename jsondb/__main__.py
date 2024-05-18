@@ -276,6 +276,23 @@ def sub_unset(args: argparse.Namespace) -> None:
         database_does_not_exist(args.name, path)
 
 
+def sub_edit(args: argparse.Namespace) -> None:
+    path = model.find_database(args.name)
+    path = validate_path(path)
+    try:
+        with model.Database.open(path) as db:
+            if not set(args.tags).issubset(db.tags) and db.enforce_tags:
+                invalid_tags(args.tags)
+            db.edit_id(
+                id=args.index,
+                data=args.data,
+                tags=args.tags or None,
+                attrs=args.attrs or None,
+            )
+    except FileNotFoundError:
+        database_does_not_exist(args.name, path)
+
+
 def sub_shell(args: argparse.Namespace) -> None:
     path = model.find_database(args.name)
     validate_path(path)
@@ -458,7 +475,18 @@ Press ENTER to continue...""")
 
 
 def sub_id(args: argparse.Namespace) -> None:
-    ...
+    path = model.find_database(args.name)
+    path = validate_path(path)
+    try:
+        with model.Database.open(path) as db:
+            try:
+                match = db.id(args.data, args.contains, args.case_insensitive)
+            except ValueError:
+                print(f"Nothing found matching '{args.data}'")
+                sys.exit(10)
+            print(match)
+    except FileNotFoundError:
+        database_does_not_exist(args.name, path)
 
 
 def sub_query(args: argparse.Namespace) -> None:
@@ -741,6 +769,55 @@ def main(argv: Optional[list[str]] = None) -> None:
     )
     unset.set_defaults(func=sub_unset)
 
+    edit_help = "Edit a database entry."
+    edit = subparsers.add_parser(
+        "edit",
+        help=edit_help,
+        description=edit_help,
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    edit.add_argument(
+        "name",
+        action="store",
+        type=str,
+        help="The name of the database (without the .jsondb extension).",
+    )
+    edit.add_argument(
+        "-d",
+        "--data",
+        action="store",
+        type=str,
+        required=False,
+        default=None,
+        help="The new data.",
+    )
+    edit.add_argument(
+        "-t",
+        "--tag",
+        action="append",
+        type=str,
+        required=False,
+        default=[],
+        dest="tags",
+        help="A tag that should be assigned to the data. Previous tags are "
+             "being removed. Can be used multiple times.",
+    )
+    edit.add_argument(
+        "-a",
+        "--attr",
+        action="append",
+        type=str,
+        required=False,
+        default=[],
+        dest="attrs",
+        help="A key: value pair that should be kept in the data's attributes. "
+             "Should be of format `KEY:VALUE` (KEY may not contain a colon). "
+             "VALUE may be either any string, an integer, a float or a boolean"
+             " (\"True\", \"False\"). All previous attributes are being "
+             "removed. Can be used multiple times.",
+    )
+    edit.set_defaults(func=sub_edit)
+
     shell_help = "Enter a REPL where all commands work without the name " \
                  "parameter."
     shell = subparsers.add_parser(
@@ -813,6 +890,24 @@ def main(argv: Optional[list[str]] = None) -> None:
         type=str,
         help="The literal data to search for. Must perfectly match the "
              "demanded entry.",
+    )
+    id.add_argument(
+        "-c",
+        "--contains",
+        action="store_true",
+        required=False,
+        default=False,
+        dest="contains",
+        help="It's enough when DATA is a substring of the entry.",
+    )
+    id.add_argument(
+        "-i",
+        "--case-insensitive",
+        action="store_true",
+        required=False,
+        default=False,
+        dest="case_insensitive",
+        help="Search is now case-insensitive.",
     )
     id.set_defaults(func=sub_id)
 
