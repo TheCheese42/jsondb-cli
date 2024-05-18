@@ -53,6 +53,11 @@ def index_out_of_bounds(index: int) -> None:
     sys.exit(9)
 
 
+def invalid_index(index: int) -> None:
+    print(f"[ERROR] Index {index} is not a valid integer.")
+    sys.exit(10)
+
+
 def gen_browse_table(
     db: model.Database,
     page: int = 0,
@@ -512,7 +517,23 @@ def sub_query(args: argparse.Namespace) -> None:
 
 
 def sub_format(args: argparse.Namespace) -> None:
-    ...
+    path = model.find_database(args.name)
+    path = validate_path(path)
+    try:
+        with model.Database.open(path) as db:
+            ids = []
+            for index in args.indices.split(","):
+                try:
+                    ids.append(int(index.strip()))
+                except ValueError:
+                    invalid_index(index)
+            try:
+                output = db.format(ids, args.format, args.use_real_ids)
+            except IndexError as e:
+                index_out_of_bounds(int(e.__notes__[0]))
+        print(output)
+    except FileNotFoundError:
+        database_does_not_exist(args.name, path)
 
 
 def main(argv: Optional[list[str]] = None) -> None:
@@ -982,6 +1003,13 @@ def main(argv: Optional[list[str]] = None) -> None:
         action="store",
         type=str,
         help="The name of the database (without the .jsondb extension).",
+    )
+    format_.add_argument(
+        "indices",
+        action="store",
+        type=str,
+        help="A list of indices separated by commas. The output from query "
+             "can be used for this.",
     )
     format_.add_argument(
         "-f",

@@ -20,7 +20,7 @@ STRUCTURE = dict[
     Union[TAGS, DATA, ENFORCE_TAGS, BACKUPS_ENABLED, VERSION]
 ]
 
-DEFAULT_FORMAT_STRING = '[%id(3)] "%data()" (%tags(", ")) (%attrs(": ","; "))'
+DEFAULT_FORMAT_STRING = '[%id(3)] "%data()" [%tags(", ")] {%attrs(": ","; ")}'
 JSONDB_HOME_PATH = Path.home() / "Documents" / "jsondb"
 
 
@@ -352,7 +352,9 @@ class Database:
         try:
             out = self._data[index]
         except IndexError:
-            raise IndexError(f"Index {index} does not exist")
+            err = IndexError(f"Index {index} does not exist")
+            err.add_note(str(index))
+            raise err
         return out
 
     def format(
@@ -413,10 +415,10 @@ class Database:
         RE_TAGS = r"%tags\(\"(.*?)\"\)"  # Group 1: SEP
         RE_ATTRS = r"%attrs\(\"(.*?)\",\s*\"(.*?)\"\)"  # Group 1: SEP1 | Group 2: SEP2  # noqa
 
-        match_id = re.match(RE_ID, final_fmt_string)
-        match_data = re.match(RE_DATA, final_fmt_string)
-        match_tags = re.match(RE_TAGS, final_fmt_string)
-        match_attrs = re.match(RE_ATTRS, final_fmt_string)
+        match_id = re.search(RE_ID, final_fmt_string)
+        match_data = re.search(RE_DATA, final_fmt_string)
+        match_tags = re.search(RE_TAGS, final_fmt_string)
+        match_attrs = re.search(RE_ATTRS, final_fmt_string)
 
         lines = []
 
@@ -436,7 +438,7 @@ class Database:
             if match_data:
                 width = match_data.group(1)
                 filler = match_data.group(3) or " "
-                data = '"' + entry[0] + '"'
+                data = entry[0]
                 line = line.replace(
                     match_data.group(0), f"{data:{filler}<{width}}"
                 )
