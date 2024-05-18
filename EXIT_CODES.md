@@ -11,3 +11,4 @@
 9: Index does not exist
 10: Requested data wasn't found
 11: Index is not a valid integer
+12: Input required

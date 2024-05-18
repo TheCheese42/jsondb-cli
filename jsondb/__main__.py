@@ -519,10 +519,21 @@ def sub_query(args: argparse.Namespace) -> None:
 def sub_format(args: argparse.Namespace) -> None:
     path = model.find_database(args.name)
     path = validate_path(path)
+    if args.indices:
+        indices = args.indices
+    else:
+        if not sys.stdin.isatty():
+            indices = sys.stdin.readline().strip()
+        else:
+            print(
+                "[ERROR] Either use the --indices flag or pipe input through "
+                "stdin."
+            )
+            sys.exit(12)
     try:
         with model.Database.open(path) as db:
             ids = []
-            for index in args.indices.split(","):
+            for index in indices.split(","):
                 try:
                     ids.append(int(index.strip()))
                 except ValueError:
@@ -1005,11 +1016,16 @@ def main(argv: Optional[list[str]] = None) -> None:
         help="The name of the database (without the .jsondb extension).",
     )
     format_.add_argument(
-        "indices",
+        "-i"
+        "--indices",
         action="store",
         type=str,
-        help="A list of indices separated by commas. The output from query "
-             "can be used for this.",
+        required=False,
+        default=None,
+        dest="indices",
+        help="A list of indices separated by commas. If not set, this will "
+             "read input from stdin, allowing for passing output from query "
+             "into this.",
     )
     format_.add_argument(
         "-f",
