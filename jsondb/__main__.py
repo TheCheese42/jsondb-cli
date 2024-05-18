@@ -1,7 +1,6 @@
 import argparse
 import os
 import sys
-import time
 from contextlib import suppress
 from pathlib import Path
 from textwrap import dedent
@@ -11,6 +10,11 @@ from . import model
 from .version import version_string
 
 SUPPRESS_WARNINGS = False
+
+
+def prompt_continue() -> None:
+    """Prompt the user to press enter to continue."""
+    input("Press ENTER to continue...")
 
 
 def validate_path(path: Optional[Union[str, Path]]) -> Path:
@@ -279,16 +283,23 @@ def sub_unset(args: argparse.Namespace) -> None:
 def sub_edit(args: argparse.Namespace) -> None:
     path = model.find_database(args.name)
     path = validate_path(path)
+    attrs = {}
+    for attr in args.attrs:
+        key, value = attr.split(":")
+        attrs[key] = parse_attr_value(value)
     try:
         with model.Database.open(path) as db:
             if not set(args.tags).issubset(db.tags) and db.enforce_tags:
                 invalid_tags(args.tags)
-            db.edit_id(
-                id=args.index,
-                data=args.data,
-                tags=args.tags or None,
-                attrs=args.attrs or None,
-            )
+            try:
+                db.edit_id(
+                    id=args.index,
+                    data=args.data,
+                    tags=args.tags or None,
+                    attrs=attrs or None,
+                )
+            except IndexError:
+                index_out_of_bounds(args.index)
     except FileNotFoundError:
         database_does_not_exist(args.name, path)
 
@@ -373,11 +384,11 @@ def sub_browse(args: argparse.Namespace) -> None:
                             "select, [N] for the next page or [P] for the "
                             "previous page."
                         )
-                        time.sleep(2)
+                        prompt_continue()
                     continue
                 if id_choice not in id_range:
                     print(f"Invalid ID {id_choice}.")
-                    time.sleep(2)
+                    prompt_continue()
                     continue
                 while True:
                     output = gen_browse_data_entry(db.at_index(id_choice))
@@ -484,13 +495,20 @@ def sub_id(args: argparse.Namespace) -> None:
             except ValueError:
                 print(f"Nothing found matching '{args.data}'")
                 sys.exit(10)
-            print(match)
+        print(match)
     except FileNotFoundError:
         database_does_not_exist(args.name, path)
 
 
 def sub_query(args: argparse.Namespace) -> None:
-    ...
+    path = model.find_database(args.name)
+    path = validate_path(path)
+    try:
+        with model.Database.open(path) as db:
+            result = db.query(args.filters)
+        print(",".join(map(str, result)))
+    except FileNotFoundError:
+        database_does_not_exist(args.name, path)
 
 
 def sub_format(args: argparse.Namespace) -> None:
@@ -781,6 +799,12 @@ def main(argv: Optional[list[str]] = None) -> None:
         action="store",
         type=str,
         help="The name of the database (without the .jsondb extension).",
+    )
+    edit.add_argument(
+        "index",
+        action="store",
+        type=int,
+        help="The index of the entry to modify."
     )
     edit.add_argument(
         "-d",
