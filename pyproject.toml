@@ -1,0 +1,20 @@
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jsondb-cli"
+version = "1.0.0"
+authors = [{ name = "Dominik Reinartz", email = "dominik.reinartz@proton.me" }]
+description = "A handy command line interface script for managing local JSON databases."
+readme = "README.md"
+requires-python = ">=3.9"
+keywords = ["json", "database", "cli"]
+license = { text = "Unlicense" }
+
+[project.optional-dependencies]
+dev = ["flake8~=7.0.0", "mypy~=1.10.0", "isort~=5.13.2"]
+
+[project.scripts]
+jsondb = "jsondb:main"
