@@ -12,4 +12,3 @@
 10: Requested data wasn't found
 11: Index is not a valid integer
 12: Input required
-13: No closing quotation

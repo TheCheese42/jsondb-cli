@@ -339,8 +339,8 @@ def sub_shell(args: argparse.Namespace) -> None:
         try:
             cmd_args = shlex.split(cmd)
         except ValueError:
-            print("[ERROR] No closing quotation found.")
-            sys.exit(13)
+            print("[ERROR] Invalid command.")
+            continue
         if not cmd_args:
             continue
         if cmd_args[0] not in allowed_commands:

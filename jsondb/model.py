@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import sys
 import time
@@ -95,6 +96,11 @@ class Database:
         db._data = structure["data"]
 
         if db.backups_enabled:
+            backup_keep_count_evar = os.getenv("JSONDB_BACKUP_KEEP_COUNT")
+            try:
+                backup_keep_count = int(str(backup_keep_count_evar))
+            except ValueError:
+                backup_keep_count = 50
             backup_dir = path.parent / f".jsondb_backups_{path.stem}"
             backup_dir.mkdir(exist_ok=True)
             timestamp = int(time.time())
@@ -104,6 +110,26 @@ class Database:
                 encoding="utf-8",
             ) as fp:
                 fp.write(json_)
+            backup_files = list(backup_dir.iterdir())
+            valid_backup_files: dict[Path, int] = {}
+            for file in backup_files:
+                if file.name.startswith(f".jsondb_backup_{path.stem}_"):
+                    try:
+                        time_ = int(file.name.split(".")[1].split("_")[-1])
+                    except ValueError:
+                        continue
+                    valid_backup_files[file] = time_
+            if len(valid_backup_files) > backup_keep_count:
+                valid_sorted = [
+                    k for k, v in sorted(
+                        valid_backup_files.items(),
+                        key=lambda item: item[1],
+                        reverse=False,
+                    )
+                ]
+                while len(valid_sorted) > backup_keep_count:
+                    valid_sorted[0].unlink()
+                    del valid_sorted[0]
 
         try:
             yield db
@@ -317,10 +343,20 @@ class Database:
         :rtype: int
         """
         for i, entry in enumerate(self._data):
-            if not case_insensitive and data == entry[0]:
-                return i
-            elif case_insensitive and data.lower() == entry[0].lower():
-                return i
+            if not case_insensitive:
+                if not contains:
+                    if data == entry[0]:
+                        return i
+                else:
+                    if data in entry[0]:
+                        return i
+            else:
+                if not contains:
+                    if data.lower() == entry[0].lower():
+                        return i
+                else:
+                    if data.lower() in entry[0].lower():
+                        return i
         else:
             raise ValueError(f"'{data}' is not in the database.")
 
