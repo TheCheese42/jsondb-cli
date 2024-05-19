@@ -106,7 +106,8 @@ def gen_browse_data_entry(entry: model.DATA_ENTRY) -> str:
     data = f"\"{entry[0]}\"\n"
     tags = f"Tags: {', '.join(entry[1])}"
     attrs_strings = [f"{k}: {v}" for k, v in entry[2].items()]
-    attrs = f"Attributes:\n    {'\n    '.join(attrs_strings)}"
+    attrs_string_formatted = '\n    '.join(attrs_strings)
+    attrs = f"Attributes:\n    {attrs_string_formatted}"
     return "\n".join([data, tags, attrs])
 
 

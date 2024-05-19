@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jsondb-cli"
-version = "1.0.0"
+version = "1.0.1"
 authors = [{ name = "Dominik Reinartz", email = "dominik.reinartz@proton.me" }]
 description = "A handy command line interface script for managing local JSON databases."
 readme = "README.md"
