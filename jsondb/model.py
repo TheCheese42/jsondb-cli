@@ -51,7 +51,7 @@ class Database:
             dir = JSONDB_HOME_PATH
         dir = Path(dir)
 
-        self.path = dir / name
+        self.path = dir / (name + ".jsondb")
         if self.path.exists():
             raise FileExistsError(f"The file {self.path} already exists.")
         dir.mkdir(exist_ok=True)
@@ -168,7 +168,9 @@ class Database:
         Calculate the amount of bytes the json representation takes up in
         memory.
         """
-        return sys.getsizeof(json.dumps(self.build_structure()))
+        return sys.getsizeof(
+            json.dumps(self.build_structure(), cls=SetEncoder)
+        )
 
     def add_tag(self, tag: str) -> None:
         """
