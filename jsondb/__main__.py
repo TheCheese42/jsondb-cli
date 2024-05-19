@@ -81,7 +81,7 @@ def gen_browse_table(
     :rtype: tuple[str, list[int]]
     """
     id_width = max(len(str(db.entries - 1)), 3)
-    data_width = 100
+    data_width = 90
     header = f"{' ' * (id_width - 2)}ID | DATA{' ' * (data_width - 5)}"
     sep = f"{'-' * (id_width + 1)}|{'-' * data_width}"
     rows: list[str] = []
@@ -336,7 +336,13 @@ def sub_shell(args: argparse.Namespace) -> None:
             continue
         elif cmd in ("exit", "quit"):
             sys.exit(0)
-        cmd_args = shlex.split(cmd)
+        try:
+            cmd_args = shlex.split(cmd)
+        except ValueError:
+            print("[ERROR] No closing quotation found.")
+            sys.exit(13)
+        if not cmd_args:
+            continue
         if cmd_args[0] not in allowed_commands:
             print(
                 f"Invalid command {cmd_args[0]}. Enter 'help' for more info."
