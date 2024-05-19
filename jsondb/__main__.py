@@ -1,5 +1,6 @@
 import argparse
 import os
+import shlex
 import sys
 from contextlib import suppress
 from pathlib import Path
@@ -248,7 +249,7 @@ def sub_rm_db(args: argparse.Namespace) -> None:
 
 
 def sub_dbs(args: argparse.Namespace) -> None:
-    print("\n".join(map(str, model.read_register_file())))
+    print("\n".join(map(str.strip, map(str, model.read_register_file()))))
 
 
 def sub_set(args: argparse.Namespace) -> None:
@@ -335,7 +336,7 @@ def sub_shell(args: argparse.Namespace) -> None:
             continue
         elif cmd in ("exit", "quit"):
             sys.exit(0)
-        cmd_args = cmd.split()
+        cmd_args = shlex.split(cmd)
         if cmd_args[0] not in allowed_commands:
             print(
                 f"Invalid command {cmd_args[0]}. Enter 'help' for more info."

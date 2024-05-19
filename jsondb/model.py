@@ -569,7 +569,7 @@ def unregister_database(db: str) -> None:
     dbs_filtered = []
     success = False
     for i in dbs:
-        if Path(i).stem != db:
+        if Path(i).stem.strip() != db:
             dbs_filtered.append(i)
         else:
             success = True
