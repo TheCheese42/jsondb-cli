@@ -575,6 +575,7 @@ def main(argv: Optional[list[str]] = None) -> None:
         action="version",
         version=f"jsondb-cli {version_string}",
     )
+    parser.set_defaults(func=lambda _: parser.print_help())
 
     subparsers = parser.add_subparsers(
         title="subcommands"
