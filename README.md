@@ -27,7 +27,7 @@ There are multiple ways to install jsondb-cli.
 The recommended and most straightforward way is using [pipx](https://pipx.pypa.io/):
 
 ```sh
-pipx install git+https://github.com/NotYou404/jsondb-cli.git
+pipx install git+https://github.com/TheCheese42/jsondb-cli.git
 ```
 
 Now the program can be globally run using the `jsondb` command.
@@ -59,7 +59,7 @@ Now your environment is ready for the installation:
 pip install git+https://github.com/NotYou404/jsondb-cli.git
 ```
 
-Now it can be invoked using `jsondb` command.
+Now it can be invoked using the `jsondb` command.
 
 ### Running from source
 
