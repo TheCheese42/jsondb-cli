@@ -565,7 +565,7 @@ def main(argv: Optional[list[str]] = None) -> None:
                     "JSONDB_SUPPRESS_WARNINGS (Suppress all warnings)\n- "
                     "JSONDB_BACKUP_KEEP_COUNT (How many backups should be kept"
                     " per database)",
-        epilog="GitHub: https://NotYou404/jsondb-cli",
+        epilog="GitHub: https://github.com/TheCheese42/jsondb-cli",
         formatter_class=argparse.RawTextHelpFormatter,
     )
 
